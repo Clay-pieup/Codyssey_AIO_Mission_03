@@ -4,11 +4,16 @@
 십자가(Cross)인지 X인지 판정한다. 외부 라이브러리 없이 표준 기능만 쓴다.
 """
 
+import time
+
 # 두 점수의 차이가 이 값보다 작으면 같은 점수(동점)로 본다.
 EPSILON = 1e-9
 
 # 동점일 때 돌려주는 판정 값
 UNDECIDED = "UNDECIDED"
+
+# 시간을 잴 때 MAC 연산을 반복하는 횟수
+REPEAT = 10
 
 
 # ---------------------------------------------------------------
@@ -61,7 +66,30 @@ def judge(score_a, score_b, label_a="A", label_b="B"):
 
 
 # ---------------------------------------------------------------
-# 4. 화면 출력 도우미
+# 4. 성능 측정: MAC 연산만 REPEAT번 돌려 1회 평균 시간(ms)
+# ---------------------------------------------------------------
+def measure_mac_ms(pattern, filter_matrix, repeat=REPEAT):
+    """입출력은 빼고 MAC 연산 호출 구간만 repeat번 재서 1회 평균(ms)을 돌려준다."""
+    start = time.perf_counter()
+    for _ in range(repeat):
+        mac(pattern, filter_matrix)
+    end = time.perf_counter()
+    return (end - start) * 1000 / repeat
+
+
+def print_performance_table(pairs):
+    """(패턴, 필터) 쌍마다 평균 시간을 재서 크기·평균 시간·연산 횟수(N²) 표로 출력한다."""
+    print("크기       평균 시간(ms)    연산 횟수(N²)")
+    print("-" * 40)
+    for pattern, filter_matrix in pairs:
+        n = len(pattern)
+        avg_ms = measure_mac_ms(pattern, filter_matrix)
+        size_text = f"{n}×{n}"
+        print(f"{size_text:<10}{avg_ms:>12.4f}{n * n:>14}")
+
+
+# ---------------------------------------------------------------
+# 5. 화면 출력 도우미
 # ---------------------------------------------------------------
 def print_header(title):
     """구역 제목을 줄로 감싸 출력한다."""
@@ -81,7 +109,7 @@ def print_matrix(matrix):
 
 
 # ---------------------------------------------------------------
-# 5. 모드 1 입력: 한 줄씩 받고, 형식이 틀리면 그 줄만 다시 받는다
+# 6. 모드 1 입력: 한 줄씩 받고, 형식이 틀리면 그 줄만 다시 받는다
 # ---------------------------------------------------------------
 def read_row(n):
     """숫자 n개가 공백으로 구분된 한 줄을 받아 소수 리스트로 돌려준다."""
@@ -112,7 +140,7 @@ def read_matrix(title, n=3):
 
 
 # ---------------------------------------------------------------
-# 6. 모드 선택과 실행
+# 7. 모드 선택과 실행
 # ---------------------------------------------------------------
 def choose_mode():
     """1 또는 2를 입력할 때까지 모드를 다시 묻는다."""
@@ -146,13 +174,19 @@ def run_mode1():
     score_b = mac(pattern, filter_b)
     result = judge(score_a, score_b, "A", "B")
 
+    avg_ms = measure_mac_ms(pattern, filter_a)
+
     print_header("[3] MAC 결과")
     print("A 점수:", score_a)
     print("B 점수:", score_b)
+    print(f"연산 시간(평균/{REPEAT}회): {avg_ms:.4f} ms")
     if result == UNDECIDED:
         print(f"판정: 판정 불가 (|A-B| < {EPSILON})")
     else:
         print("판정:", result)
+
+    print_header(f"[4] 성능 분석 (평균/{REPEAT}회)")
+    print_performance_table([(pattern, filter_a)])
 
 
 def main():
