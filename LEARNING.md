@@ -33,13 +33,37 @@
 ## 수행 로그
 
 ### U1 · 저장소 초기 설정
-(U1 진행 결과를 명령 + 출력으로 기록)
+```
+PS> python --version            → Python 3.14.7
+PS> py --version                → Python 3.14.7
+PS> git --version               → git version 2.54.0.windows.1
+PS> git config --global user.name   → Clay-pieup
+PS> git config --global user.email  → (GitHub noreply 주소, 공개 저장소라 가림)
+PS> git init -b main
+PS> git add .
+PS> git status
+On branch main / No commits yet
+Changes to be committed:
+        new file:   .gitignore
+        new file:   LEARNING.md
+        new file:   README.md
+        new file:   data.json
+→ CLAUDE.md가 목록에 없음 = .gitignore가 제대로 막고 있음
+PS> git commit -m "Docs: 저장소 뼈대 추가 - README·LEARNING·.gitignore·data.json으로 작업 시작 준비"
+[main (root-commit) 0a70162] … 4 files changed, 361 insertions(+)
+PS> git remote add origin https://github.com/Clay-pieup/Codyssey_AIO_Mission_03.git
+PS> git push -u origin main      → 1차 실패 (시행착오 1)
+PS> git push -u origin main      → 2차 성공: GitHub에 커밋 0a70162·파일 4개·README 표시 확인
+```
 
 ## 시행착오
-(생길 때마다 기록: 문제 → 원인 → 해결)
+### 1. push 실패 `remote: Repository not found`
+- 문제: 첫 push가 "저장소를 찾을 수 없음"으로 실패했다.
+- 원인: GitHub에 저장소를 만들기 전에 push했다. 주소 등록(`remote add`)은 됐지만 받을 곳이 없었다.
+- 해결: GitHub에 Public 빈 저장소(체크 항목 비움)를 만든 뒤 `git push -u origin main`만 다시 실행했다. commit과 remote add는 이미 끝났으므로 다시 하지 않았다.
 
 ## 배운 점
-(단위마다 한두 줄)
+- U1: 커밋은 내 PC 장부에 적는 것이고 push는 GitHub로 복사하는 것이다. 그래서 push가 실패해도 커밋은 남는다. `.gitignore`에 적은 파일은 `git add .`를 해도 올라가지 않는다.
 
 ## 용어 사전
 | 용어 | 쉬운 풀이 |
@@ -56,3 +80,10 @@
 | 브랜치 | 원본을 건드리지 않고 따로 작업하는 갈림길. 이번 미션은 원본 길(`main`) 하나만 쓴다 |
 | noreply 이메일 | GitHub가 주는 공개용 가짜 이메일. 진짜 이메일을 공개 저장소에 남기지 않으려고 쓴다 |
 | .gitignore | "이 파일들은 Git에 올리지 마"라고 적어 두는 목록 |
+| PowerShell | Windows에서 글자로 명령을 입력해 컴퓨터를 움직이는 창 |
+| 원격 저장소 (remote·origin) | 인터넷(GitHub)에 있는 내 코드 보관함. 관례상 이름을 `origin`으로 붙인다. 내 PC 폴더는 로컬 저장소 |
+| Public 저장소 | 누구나 볼 수 있는 공개 보관함. 이메일·토큰 같은 정보를 넣으면 안 된다 |
+| git init | 평범한 폴더에 변경 기록 장부(`.git` 숨김 폴더)를 만들어 Git 저장소로 바꾸는 명령 |
+| 스테이징 (git add) | 사진 찍기 전에 찍을 사람들을 줄 세우는 단계. 줄에 선 파일만 다음 커밋에 담긴다 |
+| 커밋 | 지금 파일 상태를 설명 한 줄과 함께 장부에 찍어 두는 기록 한 장 |
+| push | 내 PC에 쌓인 커밋을 GitHub로 올려 보내는 것. 실패해도 커밋은 PC에 남는다 |
