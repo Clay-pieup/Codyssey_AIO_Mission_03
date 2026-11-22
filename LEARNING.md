@@ -52,6 +52,21 @@
 - 결정: 가장 정밀한 `time.perf_counter()`로 MAC 호출만 10번 재서 평균을 낸다. 반복 횟수는 맨 위 `REPEAT` 한 곳에 둔다.
 - 결과: 얻은 것: 입출력에 영향받지 않는 계산 시간. / 포기한 것: 실행할 때마다 값이 조금씩 다르고, 아주 작은 표에서는 함수를 부르는 기본 비용이 섞인다.
 
+### 9. 라벨 정규화는 표(딕셔너리) 하나로
+- 맥락: `+`, `x`, `cross`처럼 같은 뜻의 표기가 섞여 있다.
+- 결정: 공백 제거·소문자로 바꾼 뒤 `LABEL_MAP`에서 찾는다.
+- 결과: 얻은 것: 대소문자·공백이 달라도 통일되고, 새 표기는 표에 한 줄만 더하면 된다. / 포기한 것: 표에 없는 표기는 자동으로 알아내지 못하고 FAIL로 남긴다(의도한 동작).
+
+### 10. 오류는 케이스 단위 FAIL, 파일 오류는 안내 후 종료
+- 맥락: 데이터 하나가 틀렸다고 전체가 멈추면 나머지 결과를 볼 수 없다.
+- 결정: 패턴 문제는 그 케이스만 FAIL + 이유로 남기고 계속 진행한다. 파일 없음·JSON 깨짐은 안내 한 줄 후 모드 2를 끝낸다.
+- 결과: 얻은 것: 프로그램이 비정상 종료하지 않는다. / 포기한 것: 검사 코드가 길어졌다.
+
+### 11. data.json 위치를 main.py 기준으로
+- 맥락: 평가자가 다른 폴더에서 실행할 수 있다.
+- 결정: `__file__`로 main.py가 있는 폴더를 찾아 그 옆의 data.json을 읽는다.
+- 결과: 얻은 것: 실행 위치와 상관없이 동작한다. / 포기한 것: 다른 위치의 데이터 파일은 지정할 수 없다.
+
 ## 핵심 코드 해설
 <details><summary>main.py · U2 데이터 구조·MAC·판정</summary>
 
@@ -177,6 +192,60 @@ def print_performance_table(pairs):
 
 </details>
 
+<details><summary>main.py · U5 data.json 로드·검증·라벨 정규화</summary>
+
+**① 준비물과 라벨·키 처리**
+```python
+import json                                    # JSON 파일을 파이썬 사전·리스트로 바꿔 주는 표준 도구
+import os                                      # 파일 경로를 다루는 표준 도구 (os.path만 사용)
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
+#   __file__ = 지금 실행 중인 main.py의 위치 → 그 폴더(dirname) → 거기에 "data.json"을 붙인 경로
+LABEL_MAP = {"+": "Cross", "cross": "Cross", "x": "X"}   # 여러 표기 → 표준 라벨
+
+def normalize_label(raw):
+    key = str(raw).strip().lower()             # 글자로 바꾸고, 앞뒤 공백 지우고, 소문자로 ("X " → "x")
+    return LABEL_MAP.get(key)                  # 표에서 찾는다. 없으면 None(= 모르는 라벨)
+
+def size_from_key(key):
+    parts = str(key).split("_")                # "size_13_2" → ["size", "13", "2"]
+    if len(parts) >= 2 and parts[0] == "size" and parts[1].isdigit():   # 모양이 맞고 두 번째가 숫자면
+        return int(parts[1])                   #   13을 숫자로 돌려준다
+    return None                                # 아니면 None(= 키 형식 오류)
+```
+
+**② n×n 검사와 파일 읽기**
+```python
+def check_matrix(matrix, n):                   # n×n 숫자 표인지 검사, 문제 없으면 None
+    if not isinstance(matrix, list) or len(matrix) != n:      # 리스트가 아니거나 행이 n개가 아니면
+        return f"행이 {n}개가 아님"
+    for row in matrix:
+        if not isinstance(row, list) or len(row) != n:        # 어느 줄이든 칸이 n개가 아니면
+            return f"열이 {n}개가 아닌 줄이 있음"
+        for value in row:
+            if not isinstance(value, (int, float)):           # 숫자가 아닌 값이 섞였으면
+                return f"숫자가 아닌 값이 있음 ({value!r})"
+    return None
+
+def load_data(path):
+    try:
+        with open(path, encoding="utf-8") as file:   # 읽기 전용으로 열고, 다 쓰면 자동으로 닫는다
+            data = json.load(file)                     # JSON → 파이썬 사전
+    except FileNotFoundError:                          # 파일이 없으면
+        print("✗ data.json을 찾을 수 없습니다 …"); return None
+    except json.JSONDecodeError as error:              # JSON 문법이 깨졌으면
+        print(f"✗ data.json 형식 오류: {error}"); return None
+    … filters·patterns가 사전(dict)으로 들어 있는지 확인 …
+    return data
+```
+
+**③ 필터 정리와 케이스 검사**
+- `load_filters()`: `size_5`에서 5를 꺼낸 뒤, 그 안의 `cross`·`x`를 정규화해 Cross·X로 저장한다. 둘 다 있어야 그 크기를 쓴다. 결과는 `{5: {"Cross": 표, "X": 표}, 13: …, 25: …}`.
+- `prepare_case(key, entry, filters)`: 키 형식 → 그 크기 필터가 있는지 → `input`·`expected`가 있는지 → n×n 숫자 표인지 → 라벨을 바꿀 수 있는지 순서로 검사한다. 실패하면 그 자리에서 이유를 돌려주고, 통과하면 `{"n", "pattern", "expected"(표준 라벨), "raw_expected"(원래 표기)}`를 돌려준다.
+- `run_mode2()`: [1] 필터 로드 → [2] 패턴마다 검사 결과 출력. (점수·PASS/FAIL·성능 표·요약은 U6)
+- 파일은 읽기만 한다(`open`에 `'w'`가 없음). 그래서 시험 차단 목록에 걸리지 않는다.
+
+</details>
+
 ## 수행 로그
 
 ### U1 · 저장소 초기 설정
@@ -275,6 +344,37 @@ B 점수: 5.0
 ```
 - 시간 값은 컴퓨터와 실행 순간에 따라 조금씩 달라진다.
 
+### U5 · data.json 로드·검증·라벨 정규화
+```
+PS> python main.py
+선택: 2
+# [1] 필터 로드
+✓ size_5 필터 로드 완료 (Cross, X)
+✓ size_13 필터 로드 완료 (Cross, X)
+✓ size_25 필터 로드 완료 (Cross, X)
+# [2] 패턴 검증 (라벨 정규화 적용)
+--- size_5_1 --- 5×5 · 필터 size_5 선택 · expected 'x' → X · 검증 OK
+--- size_5_2 --- 5×5 · 필터 size_5 선택 · expected '+' → Cross · 검증 OK
+--- size_13_1 --- 13×13 · 필터 size_13 선택 · expected 'x' → X · 검증 OK
+--- size_13_2 --- 13×13 · 필터 size_13 선택 · expected '+' → Cross · 검증 OK
+--- size_25_1 --- 25×25 · 필터 size_25 선택 · expected 'x' → X · 검증 OK
+--- size_25_2 --- 25×25 · 필터 size_25 선택 · expected '+' → Cross · 검증 OK
+```
+의도적 오류 시험 (AI가 data.json **사본**으로 시험, 원본은 그대로. Clay 재현은 U7)
+
+| 넣은 오류 | 출력 |
+|---|---|
+| 5×5 키에 13×13 패턴 | `검증 FAIL: 패턴 형식 오류: 행이 5개가 아님 (필터는 5×5)` |
+| 한 줄만 4칸 | `검증 FAIL: 패턴 형식 오류: 열이 5개가 아닌 줄이 있음` |
+| 숫자 자리에 `'a'` | `검증 FAIL: 패턴 형식 오류: 숫자가 아닌 값이 있음 ('a')` |
+| expected `'circle'` | `검증 FAIL: 라벨 오류: 표준 라벨로 바꿀 수 없는 expected 값 'circle'` |
+| 키 `big_5_1` | `검증 FAIL: 키 형식 오류 (size_N_번호 형식이 아님)` |
+| expected 없음 | `검증 FAIL: 스키마 오류 (input 또는 expected 없음)` |
+| `size_7_1` (7×7 필터 없음) | `검증 FAIL: size_7 필터가 없음` |
+| expected `' Cross '` | `→ Cross · 검증 OK` (정규화 성공) |
+| 필터 size_9에 cross만 있음 | `✗ size_9: Cross·X 필터가 모두 있어야 해서 이 크기는 쓰지 않음` |
+| 파일 없음 / JSON 깨짐 / filters 키 없음 | 각각 안내 한 줄 후 모드 2 종료 (Traceback 없음) |
+
 ## 시행착오
 ### 1. push 실패 `remote: Repository not found`
 - 문제: 첫 push가 "저장소를 찾을 수 없음"으로 실패했다.
@@ -286,11 +386,17 @@ B 점수: 5.0
 - 원인: 다음 단위 파일을 이전 단위 커밋보다 먼저 썼다.
 - 해결: 파일 지문(md5 해시)이 Clay가 실행한 U2 버전과 같은지 확인하며 되돌리고, U2를 커밋한 뒤 U3를 넣었다. 교훈: 단위마다 커밋을 먼저 끝낸다.
 
+### 3. U4 문서가 커밋에서 빠짐
+- 문제: U4 커밋 `8ea9eba`에 main.py만 들어가고 README·LEARNING이 빠졌다.
+- 원인: 판정 메시지에 커밋 명령을 같이 보여 줘서, 문서를 반영하기 전에 `git add`가 실행됐다.
+- 해결: 두 문서를 따로 커밋했다(`9a5f416`). 이후 커밋 명령은 문서 반영이 끝난 뒤에만 안내한다.
+
 ## 배운 점
 - U1: 커밋은 내 PC 장부에 적는 것이고 push는 GitHub로 복사하는 것이다. 그래서 push가 실패해도 커밋은 남는다. `.gitignore`에 적은 파일은 `git add .`를 해도 올라가지 않는다.
 - U2: 반복문 두 개가 겹치면 안쪽 줄이 n×n번 돈다. 0.1+0.2가 0.3이 아니어서 소수는 ==로 비교하면 안 된다.
 - U3: 입력은 믿지 말고 검사한다. try/except로 오류를 잡으면 프로그램이 멈추지 않고 다시 물을 수 있다.
 - U4: 시간은 잴 때마다 달라서 여러 번 재서 평균을 낸다. 사람 입력처럼 계산과 상관없는 구간은 빼고 잰다.
+- U5: 데이터는 약속(스키마)대로 왔는지 먼저 검사한다. 같은 뜻의 다른 표기는 한 표로 모아 통일하면 관리가 쉽다.
 
 ## 용어 사전
 | 용어 | 쉬운 풀이 |
@@ -329,3 +435,9 @@ B 점수: 5.0
 | ms (밀리초) | 1000분의 1초 |
 | perf_counter | 아주 짧은 시간을 정밀하게 재는 파이썬의 스톱워치 |
 | f-string 서식 (`:.4f`, `:<10`) | 숫자를 소수 몇째 자리까지, 몇 칸에 맞춰 보여 줄지 정하는 표시법 |
+| JSON | 사람도 컴퓨터도 읽기 쉬운 데이터 기록 형식. `{"이름": 값}` 모양 |
+| 딕셔너리 (dict) | "이름표 → 값"으로 짝지어 저장하는 상자. `LABEL_MAP["+"]`는 `"Cross"` |
+| None | "아무것도 없음"을 뜻하는 값. 여기서는 "찾지 못함·문제없음" 신호로 쓴다 |
+| isinstance | "이 값이 리스트(또는 숫자)가 맞니?" 하고 종류를 확인하는 함수 |
+| with open(...) | 파일을 열고, 쓰임이 끝나면 자동으로 닫아 주는 안전한 방식 |
+| 스키마 검증 | 데이터가 약속한 모양(키 이름, 칸 수, 값 종류)을 지키는지 확인하는 일 |

@@ -4,6 +4,8 @@
 십자가(Cross)인지 X인지 판정한다. 외부 라이브러리 없이 표준 기능만 쓴다.
 """
 
+import json
+import os
 import time
 
 # 두 점수의 차이가 이 값보다 작으면 같은 점수(동점)로 본다.
@@ -14,6 +16,12 @@ UNDECIDED = "UNDECIDED"
 
 # 시간을 잴 때 MAC 연산을 반복하는 횟수
 REPEAT = 10
+
+# data.json 위치: main.py와 같은 폴더 (어느 폴더에서 실행해도 찾을 수 있게)
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
+
+# 라벨 정규화 표: 여러 표기(소문자로 바꾼 뒤)를 표준 라벨 Cross / X로 통일한다
+LABEL_MAP = {"+": "Cross", "cross": "Cross", "x": "X"}
 
 
 # ---------------------------------------------------------------
@@ -140,7 +148,120 @@ def read_matrix(title, n=3):
 
 
 # ---------------------------------------------------------------
-# 7. 모드 선택과 실행
+# 7. 모드 2 준비: data.json 읽기, 키에서 크기 꺼내기, 검증, 라벨 정규화
+# ---------------------------------------------------------------
+def normalize_label(raw):
+    """'+', 'cross', 'x' 같은 표기를 표준 라벨(Cross/X)로 바꾼다. 모르는 표기면 None."""
+    key = str(raw).strip().lower()
+    return LABEL_MAP.get(key)
+
+
+def size_from_key(key):
+    """'size_13' 또는 'size_13_2' 같은 키에서 크기 13을 꺼낸다. 형식이 다르면 None."""
+    parts = str(key).split("_")
+    if len(parts) >= 2 and parts[0] == "size" and parts[1].isdigit():
+        return int(parts[1])
+    return None
+
+
+def check_matrix(matrix, n):
+    """n×n 숫자 표인지 검사한다. 문제가 없으면 None, 있으면 이유를 글로 돌려준다."""
+    if not isinstance(matrix, list) or len(matrix) != n:
+        return f"행이 {n}개가 아님"
+    for row in matrix:
+        if not isinstance(row, list) or len(row) != n:
+            return f"열이 {n}개가 아닌 줄이 있음"
+        for value in row:
+            if not isinstance(value, (int, float)):
+                return f"숫자가 아닌 값이 있음 ({value!r})"
+    return None
+
+
+def load_data(path):
+    """JSON 파일을 읽어 돌려준다. 파일이 없거나 형식이 깨졌으면 안내하고 None."""
+    try:
+        with open(path, encoding="utf-8") as file:
+            data = json.load(file)
+    except FileNotFoundError:
+        print("✗ data.json을 찾을 수 없습니다: main.py와 같은 폴더에 두세요.")
+        return None
+    except json.JSONDecodeError as error:
+        print(f"✗ data.json 형식 오류: {error}")
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("filters"), dict) \
+            or not isinstance(data.get("patterns"), dict):
+        print("✗ data.json에 filters와 patterns가 모두 있어야 합니다.")
+        return None
+    return data
+
+
+def load_filters(raw_filters):
+    """크기별 필터를 검사해 {크기: {"Cross": 표, "X": 표}} 모양으로 정리한다."""
+    filters = {}
+    for size_key, group in raw_filters.items():
+        n = size_from_key(size_key)
+        if n is None or not isinstance(group, dict):
+            print(f"✗ {size_key}: 키 형식이 size_N이 아니어서 건너뜀")
+            continue
+        loaded = {}
+        for raw_label, matrix in group.items():
+            label = normalize_label(raw_label)
+            error = check_matrix(matrix, n)
+            if label is None:
+                print(f"✗ {size_key}.{raw_label}: 알 수 없는 필터 라벨이어서 건너뜀")
+            elif error:
+                print(f"✗ {size_key}.{raw_label}: {error}")
+            else:
+                loaded[label] = matrix
+        if "Cross" in loaded and "X" in loaded:
+            filters[n] = loaded
+            print(f"✓ {size_key} 필터 로드 완료 (Cross, X)")
+        else:
+            print(f"✗ {size_key}: Cross·X 필터가 모두 있어야 해서 이 크기는 쓰지 않음")
+    return filters
+
+
+def prepare_case(key, entry, filters):
+    """패턴 하나를 검사한다. 통과하면 (케이스 정보, None), 실패하면 (None, 실패 이유)."""
+    n = size_from_key(key)
+    if n is None:
+        return None, "키 형식 오류 (size_N_번호 형식이 아님)"
+    if n not in filters:
+        return None, f"size_{n} 필터가 없음"
+    if not isinstance(entry, dict) or "input" not in entry or "expected" not in entry:
+        return None, "스키마 오류 (input 또는 expected 없음)"
+    error = check_matrix(entry["input"], n)
+    if error:
+        return None, f"패턴 형식 오류: {error} (필터는 {n}×{n})"
+    expected = normalize_label(entry["expected"])
+    if expected is None:
+        return None, f"라벨 오류: 표준 라벨로 바꿀 수 없는 expected 값 {entry['expected']!r}"
+    case = {"n": n, "pattern": entry["input"], "expected": expected, "raw_expected": entry["expected"]}
+    return case, None
+
+
+def run_mode2():
+    """모드 2: data.json을 읽어 필터를 불러오고, 패턴마다 검증·라벨 정규화를 한다."""
+    print_header("[1] 필터 로드")
+    data = load_data(DATA_FILE)
+    if data is None:
+        return
+    filters = load_filters(data["filters"])
+
+    print_header("[2] 패턴 검증 (라벨 정규화 적용)")
+    for key, entry in data["patterns"].items():
+        case, reason = prepare_case(key, entry, filters)
+        if case is None:
+            print(f"--- {key} --- 검증 FAIL: {reason}")
+        else:
+            n = case["n"]
+            print(f"--- {key} --- {n}×{n} · 필터 size_{n} 선택 · "
+                  f"expected {case['raw_expected']!r} → {case['expected']} · 검증 OK")
+    print("\n(점수 계산·PASS/FAIL·성능 표·결과 요약은 U6에서 추가합니다.)")
+
+
+# ---------------------------------------------------------------
+# 8. 모드 선택과 실행
 # ---------------------------------------------------------------
 def choose_mode():
     """1 또는 2를 입력할 때까지 모드를 다시 묻는다."""
@@ -195,7 +316,7 @@ def main():
     if mode == "1":
         run_mode1()
     else:
-        print("data.json 분석은 U5에서 구현합니다.")
+        run_mode2()
 
 
 if __name__ == "__main__":
