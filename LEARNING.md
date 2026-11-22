@@ -47,6 +47,11 @@
 - 결정: `main()` 전체를 `try/except (KeyboardInterrupt, EOFError)`로 감싸 안내 문구만 띄우고 끝낸다.
 - 결과: 얻은 것: 평가자에게 깔끔한 종료 화면을 보여 준다. / 포기한 것: 없음(정상 흐름에는 영향 없음).
 
+### 8. 시간 측정 방식
+- 맥락: 3×3 계산은 1000분의 1초보다 짧고, 잴 때마다 값이 흔들린다.
+- 결정: 가장 정밀한 `time.perf_counter()`로 MAC 호출만 10번 재서 평균을 낸다. 반복 횟수는 맨 위 `REPEAT` 한 곳에 둔다.
+- 결과: 얻은 것: 입출력에 영향받지 않는 계산 시간. / 포기한 것: 실행할 때마다 값이 조금씩 다르고, 아주 작은 표에서는 함수를 부르는 기본 비용이 섞인다.
+
 ## 핵심 코드 해설
 <details><summary>main.py · U2 데이터 구조·MAC·판정</summary>
 
@@ -145,6 +150,33 @@ def choose_mode():
 
 </details>
 
+<details><summary>main.py · U4 시간 측정·성능 표</summary>
+
+```python
+import time                                   # 파이썬 표준 시계 도구 (외부 라이브러리 아님, 시험 차단 목록에도 없음)
+REPEAT = 10                                   # 반복 횟수
+
+def measure_mac_ms(pattern, filter_matrix, repeat=REPEAT):
+    start = time.perf_counter()               # 출발 시각 기록 (초 단위)
+    for _ in range(repeat):                   # 10번
+        mac(pattern, filter_matrix)           #   MAC 연산만 돌린다 (입출력 없음)
+    end = time.perf_counter()                 # 도착 시각 기록
+    return (end - start) * 1000 / repeat      # 걸린 초 × 1000 = 밀리초(ms), ÷ 10 = 1회 평균
+
+def print_performance_table(pairs):
+    print("크기       평균 시간(ms)    연산 횟수(N²)")   # 표 머리
+    for pattern, filter_matrix in pairs:      # (패턴, 필터) 쌍마다
+        n = len(pattern)                      #   한 변의 길이
+        avg_ms = measure_mac_ms(pattern, filter_matrix)
+        size_text = f"{n}×{n}"                #   "3×3" 같은 글자
+        print(f"{size_text:<10}{avg_ms:>12.4f}{n * n:>14}")
+        # :<10 = 왼쪽 맞춤 10칸, :>12.4f = 오른쪽 맞춤 12칸에 소수 넷째 자리까지, n*n = 연산 횟수
+```
+- `run_mode1()`에는 [3] MAC 결과의 `연산 시간(평균/10회)` 한 줄과, 맨 끝 `[4] 성능 분석` 표가 추가됐다.
+- 표 함수는 (패턴, 필터) 쌍 목록만 받으면 크기와 상관없이 쓸 수 있어서 모드 2(U6)에서 다시 쓴다.
+
+</details>
+
 ## 수행 로그
 
 ### U1 · 저장소 초기 설정
@@ -228,6 +260,21 @@ B 점수: 5.0
 입력이 중단되어 프로그램을 종료합니다.
 ```
 
+### U4 · 시간 측정과 성능 표
+```
+PS> python main.py   (입력은 U3 ①과 같음)
+# [3] MAC 결과
+A 점수: 1.0
+B 점수: 5.0
+연산 시간(평균/10회): 0.0025 ms
+판정: B
+# [4] 성능 분석 (평균/10회)
+크기       평균 시간(ms)    연산 횟수(N²)
+----------------------------------------
+3×3             0.0021             9
+```
+- 시간 값은 컴퓨터와 실행 순간에 따라 조금씩 달라진다.
+
 ## 시행착오
 ### 1. push 실패 `remote: Repository not found`
 - 문제: 첫 push가 "저장소를 찾을 수 없음"으로 실패했다.
@@ -243,6 +290,7 @@ B 점수: 5.0
 - U1: 커밋은 내 PC 장부에 적는 것이고 push는 GitHub로 복사하는 것이다. 그래서 push가 실패해도 커밋은 남는다. `.gitignore`에 적은 파일은 `git add .`를 해도 올라가지 않는다.
 - U2: 반복문 두 개가 겹치면 안쪽 줄이 n×n번 돈다. 0.1+0.2가 0.3이 아니어서 소수는 ==로 비교하면 안 된다.
 - U3: 입력은 믿지 말고 검사한다. try/except로 오류를 잡으면 프로그램이 멈추지 않고 다시 물을 수 있다.
+- U4: 시간은 잴 때마다 달라서 여러 번 재서 평균을 낸다. 사람 입력처럼 계산과 상관없는 구간은 빼고 잰다.
 
 ## 용어 사전
 | 용어 | 쉬운 풀이 |
@@ -277,3 +325,7 @@ B 점수: 5.0
 | split() | 글자 한 줄을 공백 기준으로 잘라 조각 리스트로 만든다 |
 | strip() | 글자 앞뒤의 공백을 지운다 |
 | Ctrl+C (KeyboardInterrupt) | 실행 중인 프로그램을 멈추라는 키. 파이썬에서는 KeyboardInterrupt라는 오류로 전달된다 |
+| import | 파이썬에 기본으로 들어 있는 도구 상자(모듈)를 꺼내 쓰겠다는 선언 |
+| ms (밀리초) | 1000분의 1초 |
+| perf_counter | 아주 짧은 시간을 정밀하게 재는 파이썬의 스톱워치 |
+| f-string 서식 (`:.4f`, `:<10`) | 숫자를 소수 몇째 자리까지, 몇 칸에 맞춰 보여 줄지 정하는 표시법 |
