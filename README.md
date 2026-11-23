@@ -97,4 +97,4 @@ python main.py
 
 ## 더 보기
 - [학습 기록](LEARNING.md) — 설계 결정 · 핵심 코드 해설 · 수행 로그 · 배운 점 · 용어 사전
-- [발표 슬라이드](https://claude.ai/artifact/2ZPzaHT517V7LF96dJfXrS) — 평가 기준 5가지 순서 + 배운 점 (14장)
+- 발표 슬라이드: [온라인 보기](https://claude.ai/artifact/2ZPzaHT517V7LF96dJfXrS) · [PDF](docs/slides.pdf) — 평가 기준 5가지 순서 + 배운 점 (14장)
