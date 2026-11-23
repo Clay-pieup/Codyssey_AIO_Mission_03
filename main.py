@@ -21,6 +21,9 @@ REPEAT = 10
 # data.json 위치: main.py와 같은 폴더 (어느 폴더에서 실행해도 찾을 수 있게)
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
 
+# 패턴 생성기에서 받을 수 있는 크기 범위 (홀수만: 가운데 줄이 하나여야 모양이 대칭)
+GEN_MIN, GEN_MAX = 3, 51
+
 # 성능 분석에 쓰는 크기 (명세: 3×3 포함, 5×5 / 13×13 / 25×25)
 PERF_SIZES = [3, 5, 13, 25]
 
@@ -152,7 +155,45 @@ def read_matrix(title, n=3):
 
 
 # ---------------------------------------------------------------
-# 7. 모드 2 준비: data.json 읽기, 키에서 크기 꺼내기, 검증, 라벨 정규화
+# 7. 패턴 생성기 (보너스): N×N 십자가와 X를 자동으로 만든다
+# ---------------------------------------------------------------
+def make_cross_pattern(n):
+    """가운데 행과 가운데 열이 1.0인 N×N 십자가 패턴을 만든다."""
+    pattern = make_matrix(n)
+    mid = n // 2
+    for row in range(n):
+        for col in range(n):
+            if row == mid or col == mid:
+                set_value(pattern, row, col, 1.0)
+    return pattern
+
+
+def make_x_pattern(n):
+    """두 대각선(↘, ↙)이 1.0인 N×N X 패턴을 만든다."""
+    pattern = make_matrix(n)
+    for row in range(n):
+        for col in range(n):
+            if row == col or row + col == n - 1:
+                set_value(pattern, row, col, 1.0)
+    return pattern
+
+
+def read_size():
+    """GEN_MIN~GEN_MAX 사이의 홀수 N을 입력받는다. 틀리면 다시 묻는다."""
+    while True:
+        text = input(f"크기 N 입력 ({GEN_MIN}~{GEN_MAX} 홀수): ").strip()
+        if not text.isdigit():
+            print("입력 오류: 숫자만 입력하세요.")
+            continue
+        n = int(text)
+        if n < GEN_MIN or n > GEN_MAX or n % 2 == 0:
+            print(f"입력 오류: {GEN_MIN}~{GEN_MAX} 사이의 홀수를 입력하세요.")
+            continue
+        return n
+
+
+# ---------------------------------------------------------------
+# 8. 모드 2 준비: data.json 읽기, 키에서 크기 꺼내기, 검증, 라벨 정규화
 # ---------------------------------------------------------------
 def normalize_label(raw):
     """'+', 'cross', 'x' 같은 표기를 표준 라벨(Cross/X)로 바꾼다. 모르는 표기면 None."""
@@ -314,19 +355,20 @@ def run_mode2():
 
 
 # ---------------------------------------------------------------
-# 8. 모드 선택과 실행
+# 9. 모드 선택과 실행
 # ---------------------------------------------------------------
 def choose_mode():
-    """1 또는 2를 입력할 때까지 모드를 다시 묻는다."""
+    """1, 2, 3 중 하나를 입력할 때까지 모드를 다시 묻는다."""
     while True:
         print()
         print("[모드 선택]")
         print("1. 사용자 입력 (3x3)")
         print("2. data.json 분석")
+        print("3. 패턴 생성기 (보너스)")
         choice = input("선택: ").strip()
-        if choice == "1" or choice == "2":
+        if choice == "1" or choice == "2" or choice == "3":
             return choice
-        print("입력 오류: 1 또는 2를 입력하세요.")
+        print("입력 오류: 1, 2, 3 중에서 입력하세요.")
 
 
 def run_mode1():
@@ -351,6 +393,14 @@ def run_mode1():
     avg_ms = measure_mac_ms(pattern, filter_a)
 
     print_header("[3] MAC 결과")
+    print_mac_result(score_a, score_b, result, avg_ms)
+
+    print_header(f"[4] 성능 분석 (평균/{REPEAT}회)")
+    print_performance_table([(pattern, filter_a)])
+
+
+def print_mac_result(score_a, score_b, result, avg_ms):
+    """A·B 점수, 연산 시간, 판정을 출력한다. 모드 1과 모드 3이 함께 쓴다."""
     print("A 점수:", score_a)
     print("B 점수:", score_b)
     print(f"연산 시간(평균/{REPEAT}회): {avg_ms:.4f} ms")
@@ -359,8 +409,40 @@ def run_mode1():
     else:
         print("판정:", result)
 
-    print_header(f"[4] 성능 분석 (평균/{REPEAT}회)")
-    print_performance_table([(pattern, filter_a)])
+
+def run_mode3():
+    """모드 3: N을 받아 Cross·X를 만들고, 모드 1과 같은 방식으로 판정·성능 분석을 한다."""
+    print_header("[1] 크기 입력")
+    n = read_size()
+
+    cross = make_cross_pattern(n)
+    x = make_x_pattern(n)
+    print_header(f"[2] 생성된 패턴 ({n}×{n})")
+    if n <= 25:                         # 너무 크면 한 줄이 화면을 넘으므로 25×25까지만 그린다
+        print("Cross 패턴:")
+        print_matrix(cross)
+        print("X 패턴:")
+        print_matrix(x)
+    else:
+        print(f"(크기가 커서 표 출력은 생략합니다. Cross·X 패턴 {n}×{n} 생성 완료)")
+
+    # 모드 1 재사용: 생성한 두 모양을 필터 A(Cross)·B(X)로 쓰고, 각 모양을 패턴으로 넣어 판정한다
+    print_header("[3] MAC 결과 (필터 A = Cross, 필터 B = X)")
+    for name, pattern in (("Cross 패턴", cross), ("X 패턴", x)):
+        score_a = mac(pattern, cross)
+        score_b = mac(pattern, x)
+        result = judge(score_a, score_b, "A", "B")
+        avg_ms = measure_mac_ms(pattern, cross)
+        print(f"--- {name} 입력 ---")
+        print_mac_result(score_a, score_b, result, avg_ms)
+
+    # 성능 분석 재사용: 3×3과 입력한 N×N을 생성 패턴으로 잰다
+    print_header(f"[4] 성능 분석 (평균/{REPEAT}회, 생성 패턴 사용)")
+    sizes = [3] if n == 3 else [3, n]
+    pairs = []
+    for size in sizes:
+        pairs.append((make_cross_pattern(size), make_x_pattern(size)))
+    print_performance_table(pairs)
 
 
 def main():
@@ -368,8 +450,10 @@ def main():
     mode = choose_mode()
     if mode == "1":
         run_mode1()
-    else:
+    elif mode == "2":
         run_mode2()
+    else:
+        run_mode3()
 
 
 if __name__ == "__main__":
