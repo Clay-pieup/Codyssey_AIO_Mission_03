@@ -67,6 +67,16 @@
 - 결정: `__file__`로 main.py가 있는 폴더를 찾아 그 옆의 data.json을 읽는다.
 - 결과: 얻은 것: 실행 위치와 상관없이 동작한다. / 포기한 것: 다른 위치의 데이터 파일은 지정할 수 없다.
 
+### 12. PASS/FAIL 이유를 나눠 기록 (`grade`)
+- 맥락: 실패가 '점수가 거의 같아서'인지 '반대로 판정해서'인지 알아야 원인을 고칠 수 있다.
+- 결정: `grade()`가 판정과 expected를 비교하고, 실패 이유를 '동점(UNDECIDED)'과 '판정 ≠ expected' 두 가지로 돌려준다. 검증 단계 FAIL(U5)도 같은 실패 목록에 넣는다.
+- 결과: 얻은 것: 결과 요약만 보고 수치 비교 문제인지, 로직·데이터 문제인지 구분할 수 있다. / 포기한 것: 없음.
+
+### 13. 성능 표는 같은 조건(모두 1.0인 표)으로 측정
+- 맥락: data.json에는 3×3이 없고, 시간은 값이 아니라 칸 수에 따라 달라진다.
+- 결정: `PERF_SIZES = [3, 5, 13, 25]`마다 `make_matrix(n, 1.0)` 두 개로 잰다.
+- 결과: 얻은 것: 네 크기를 공정하게 비교한다. / 포기한 것: 실제 data.json 패턴으로 잰 시간은 아니다.
+
 ## 핵심 코드 해설
 <details><summary>main.py · U2 데이터 구조·MAC·판정</summary>
 
@@ -246,6 +256,42 @@ def load_data(path):
 
 </details>
 
+<details><summary>main.py · U6 판정·PASS/FAIL·성능 표·결과 요약</summary>
+
+**① PASS/FAIL 판단**
+```python
+def grade(result, expected):
+    if result == expected:                         # 판정이 정답과 같으면
+        return True, ""                            #   통과, 이유 없음
+    if result == UNDECIDED:                        # 동점이라 판정을 못 했으면
+        return False, "동점(UNDECIDED) 처리 규칙에 따라 FAIL"
+    return False, f"판정 {result} ≠ expected {expected}"   # 반대로 판정했으면
+```
+- 비교하는 두 값은 모두 표준 라벨이다: `judge()` 결과(Cross/X/UNDECIDED)와 정규화된 expected(Cross/X).
+
+**② `run_mode2()` [2] 패턴 분석**
+```python
+total = 0; passed = 0; failures = []               # 셀 통 3개: 전체 수, 통과 수, 실패 목록
+for key, entry in data["patterns"].items():        # 케이스마다
+    total += 1
+    case, reason = prepare_case(key, entry, filters)   # U5 검사
+    if case is None:                               # 검사에서 떨어지면
+        print(f"FAIL ({reason})"); failures.append((key, reason)); continue
+    pair = filters[case["n"]]                      # 크기에 맞는 Cross·X 필터 한 쌍
+    cross_score = mac(case["pattern"], pair["Cross"])   # Cross 필터 점수
+    x_score = mac(case["pattern"], pair["X"])           # X 필터 점수
+    result = judge(cross_score, x_score, "Cross", "X")  # U2 판정 (epsilon)
+    ok, reason = grade(result, case["expected"])        # 정답과 비교
+    … 점수 2줄, "판정 | expected | PASS 또는 FAIL(이유)" 출력 …
+    통과면 passed += 1, 아니면 failures에 (이름, 이유) 추가
+```
+
+**③ [3] 성능 분석과 [4] 결과 요약**
+- [3]: `PERF_SIZES`(3·5·13·25)마다 `make_matrix(n, 1.0)` 두 개를 만들어 U4의 `print_performance_table()`에 넘긴다.
+- [4]: 총·통과·실패 수를 출력하고, 실패 목록을 `- 이름: 이유`로 한 줄씩 출력한다.
+
+</details>
+
 ## 수행 로그
 
 ### U1 · 저장소 초기 설정
@@ -375,6 +421,58 @@ PS> python main.py
 | 필터 size_9에 cross만 있음 | `✗ size_9: Cross·X 필터가 모두 있어야 해서 이 크기는 쓰지 않음` |
 | 파일 없음 / JSON 깨짐 / filters 키 없음 | 각각 안내 한 줄 후 모드 2 종료 (Traceback 없음) |
 
+### U6 · 판정·PASS/FAIL·성능 표·결과 요약
+```
+PS> python main.py
+선택: 2
+# [1] 필터 로드
+✓ size_5 필터 로드 완료 (Cross, X)
+✓ size_13 필터 로드 완료 (Cross, X)
+✓ size_25 필터 로드 완료 (Cross, X)
+# [2] 패턴 분석 (라벨 정규화 적용)
+--- size_5_1 ---
+Cross 점수: 0.9
+X 점수: 0.8999999999999999
+판정: UNDECIDED | expected: X | FAIL (동점(UNDECIDED) 처리 규칙에 따라 FAIL)
+--- size_5_2 ---
+Cross 점수: 8.9
+X 점수: 0.1
+판정: Cross | expected: Cross | PASS
+--- size_13_1 ---
+Cross 점수: 0.3
+X 점수: 14.700000000000008
+판정: X | expected: X | PASS
+--- size_13_2 ---
+Cross 점수: 7.499999999999997
+X 점수: 7.5
+판정: UNDECIDED | expected: Cross | FAIL (동점(UNDECIDED) 처리 규칙에 따라 FAIL)
+--- size_25_1 ---
+Cross 점수: 4.9
+X 점수: 4.899999999999999
+판정: UNDECIDED | expected: X | FAIL (동점(UNDECIDED) 처리 규칙에 따라 FAIL)
+--- size_25_2 ---
+Cross 점수: 52.9
+X 점수: 0.1
+판정: Cross | expected: Cross | PASS
+# [3] 성능 분석 (평균/10회)
+크기       평균 시간(ms)    연산 횟수(N²)
+----------------------------------------
+3×3             0.0014             9
+5×5             0.0022            25
+13×13           0.0101           169
+25×25           0.0253           625
+# [4] 결과 요약
+총 테스트: 6개
+통과: 3개
+실패: 3개
+실패 케이스:
+- size_5_1: 동점(UNDECIDED) 처리 규칙에 따라 FAIL
+- size_13_2: 동점(UNDECIDED) 처리 규칙에 따라 FAIL
+- size_25_1: 동점(UNDECIDED) 처리 규칙에 따라 FAIL
+```
+- VS Code 터미널을 스크롤하면 같은 블록이 겹쳐 보일 수 있다(화면 표시 문제). 실제 출력은 위와 같이 케이스마다 한 번씩이다.
+- 칸 수는 9 → 625로 약 69배, 시간은 0.0014 → 0.0253 ms로 약 18배 늘었다.
+
 ## 시행착오
 ### 1. push 실패 `remote: Repository not found`
 - 문제: 첫 push가 "저장소를 찾을 수 없음"으로 실패했다.
@@ -391,12 +489,18 @@ PS> python main.py
 - 원인: 판정 메시지에 커밋 명령을 같이 보여 줘서, 문서를 반영하기 전에 `git add`가 실행됐다.
 - 해결: 두 문서를 따로 커밋했다(`9a5f416`). 이후 커밋 명령은 문서 반영이 끝난 뒤에만 안내한다.
 
+### 4. PC에 다듬기 전 파일이 들어감
+- 문제: U5 코드를 넣은 뒤 오류 문구를 다듬었는데, Clay PC에는 다듬기 전 파일이 들어가 있었다.
+- 원인: 파일을 옮긴 뒤 PC 쪽 파일이 같은지 확인하지 않았다.
+- 해결: U5 커밋 전에 해시를 비교해 차이를 찾고, 다듬은 버전으로 다시 넣은 뒤 해시가 같은 것을 확인했다. 이후에는 파일을 넣을 때마다 해시를 확인한다.
+
 ## 배운 점
 - U1: 커밋은 내 PC 장부에 적는 것이고 push는 GitHub로 복사하는 것이다. 그래서 push가 실패해도 커밋은 남는다. `.gitignore`에 적은 파일은 `git add .`를 해도 올라가지 않는다.
 - U2: 반복문 두 개가 겹치면 안쪽 줄이 n×n번 돈다. 0.1+0.2가 0.3이 아니어서 소수는 ==로 비교하면 안 된다.
 - U3: 입력은 믿지 말고 검사한다. try/except로 오류를 잡으면 프로그램이 멈추지 않고 다시 물을 수 있다.
 - U4: 시간은 잴 때마다 달라서 여러 번 재서 평균을 낸다. 사람 입력처럼 계산과 상관없는 구간은 빼고 잰다.
 - U5: 데이터는 약속(스키마)대로 왔는지 먼저 검사한다. 같은 뜻의 다른 표기는 한 표로 모아 통일하면 관리가 쉽다.
+- U6: 실패 이유를 종류별로 나눠 적으면 원인 진단이 쉬워진다. 칸 수가 69배 늘 때 시간은 약 18배 늘었다. 작은 표에서는 고정 비용이 섞이기 때문이다.
 
 ## 용어 사전
 | 용어 | 쉬운 풀이 |
@@ -441,3 +545,6 @@ PS> python main.py
 | isinstance | "이 값이 리스트(또는 숫자)가 맞니?" 하고 종류를 확인하는 함수 |
 | with open(...) | 파일을 열고, 쓰임이 끝나면 자동으로 닫아 주는 안전한 방식 |
 | 스키마 검증 | 데이터가 약속한 모양(키 이름, 칸 수, 값 종류)을 지키는지 확인하는 일 |
+| PASS / FAIL | 프로그램의 판정이 정답(expected)과 같으면 통과, 다르면 실패 |
+| 집계 | 여러 결과를 세어 합계를 내는 일 (총·통과·실패 수) |
+| 튜플 | 값 여러 개를 괄호로 묶은 한 묶음. 실패 목록에 `(이름, 이유)`를 함께 넣을 때 쓴다 |

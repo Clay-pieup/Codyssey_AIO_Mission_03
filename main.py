@@ -20,6 +20,9 @@ REPEAT = 10
 # data.json 위치: main.py와 같은 폴더 (어느 폴더에서 실행해도 찾을 수 있게)
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
 
+# 성능 분석에 쓰는 크기 (명세: 3×3 포함, 5×5 / 13×13 / 25×25)
+PERF_SIZES = [3, 5, 13, 25]
+
 # 라벨 정규화 표: 여러 표기(소문자로 바꾼 뒤)를 표준 라벨 Cross / X로 통일한다
 LABEL_MAP = {"+": "Cross", "cross": "Cross", "x": "X"}
 
@@ -240,24 +243,63 @@ def prepare_case(key, entry, filters):
     return case, None
 
 
+def grade(result, expected):
+    """판정과 정답(expected)을 비교해 (통과 여부, 실패 이유)를 돌려준다."""
+    if result == expected:
+        return True, ""
+    if result == UNDECIDED:
+        return False, "동점(UNDECIDED) 처리 규칙에 따라 FAIL"
+    return False, f"판정 {result} ≠ expected {expected}"
+
+
 def run_mode2():
-    """모드 2: data.json을 읽어 필터를 불러오고, 패턴마다 검증·라벨 정규화를 한다."""
+    """모드 2: 필터 로드 → 패턴 검증·판정·PASS/FAIL → 성능 분석 → 결과 요약."""
     print_header("[1] 필터 로드")
     data = load_data(DATA_FILE)
     if data is None:
         return
     filters = load_filters(data["filters"])
 
-    print_header("[2] 패턴 검증 (라벨 정규화 적용)")
+    print_header("[2] 패턴 분석 (라벨 정규화 적용)")
+    total = 0
+    passed = 0
+    failures = []                       # (케이스 이름, 실패 이유) 목록
     for key, entry in data["patterns"].items():
+        total += 1
+        print(f"--- {key} ---")
         case, reason = prepare_case(key, entry, filters)
-        if case is None:
-            print(f"--- {key} --- 검증 FAIL: {reason}")
+        if case is None:                # 검증 단계에서 실패한 케이스
+            print(f"FAIL ({reason})")
+            failures.append((key, reason))
+            continue
+        pair = filters[case["n"]]
+        cross_score = mac(case["pattern"], pair["Cross"])
+        x_score = mac(case["pattern"], pair["X"])
+        result = judge(cross_score, x_score, "Cross", "X")
+        ok, reason = grade(result, case["expected"])
+        print("Cross 점수:", cross_score)
+        print("X 점수:", x_score)
+        mark = "PASS" if ok else f"FAIL ({reason})"
+        print(f"판정: {result} | expected: {case['expected']} | {mark}")
+        if ok:
+            passed += 1
         else:
-            n = case["n"]
-            print(f"--- {key} --- {n}×{n} · 필터 size_{n} 선택 · "
-                  f"expected {case['raw_expected']!r} → {case['expected']} · 검증 OK")
-    print("\n(점수 계산·PASS/FAIL·성능 표·결과 요약은 U6에서 추가합니다.)")
+            failures.append((key, reason))
+
+    print_header(f"[3] 성능 분석 (평균/{REPEAT}회)")
+    pairs = []
+    for n in PERF_SIZES:                # 시간은 값이 아니라 칸 수에 달려 있으므로 같은 조건(모두 1.0)으로 비교
+        pairs.append((make_matrix(n, 1.0), make_matrix(n, 1.0)))
+    print_performance_table(pairs)
+
+    print_header("[4] 결과 요약")
+    print(f"총 테스트: {total}개")
+    print(f"통과: {passed}개")
+    print(f"실패: {len(failures)}개")
+    if failures:
+        print("실패 케이스:")
+        for key, reason in failures:
+            print(f"- {key}: {reason}")
 
 
 # ---------------------------------------------------------------
