@@ -6,6 +6,7 @@
 
 import json
 import os
+import sys
 import time
 
 # 두 점수의 차이가 이 값보다 작으면 같은 점수(동점)로 본다.
@@ -180,20 +181,20 @@ def check_matrix(matrix, n):
     return None
 
 
-def load_data(path):
-    """JSON 파일을 읽어 돌려준다. 파일이 없거나 형식이 깨졌으면 안내하고 None."""
+def load_data(path, name):
+    """JSON 파일을 읽어 돌려준다. 파일이 없거나 형식이 깨졌으면 안내하고 None. name은 화면에 보일 이름."""
     try:
         with open(path, encoding="utf-8") as file:
             data = json.load(file)
     except FileNotFoundError:
-        print("✗ data.json을 찾을 수 없습니다: main.py와 같은 폴더에 두세요.")
+        print(f"✗ {name}을(를) 찾을 수 없습니다. 파일 위치를 확인하세요.")
         return None
     except json.JSONDecodeError as error:
-        print(f"✗ data.json 형식 오류: {error}")
+        print(f"✗ {name} 형식 오류: {error}")
         return None
     if not isinstance(data, dict) or not isinstance(data.get("filters"), dict) \
             or not isinstance(data.get("patterns"), dict):
-        print("✗ data.json에 filters와 patterns가 모두 있어야 합니다.")
+        print(f"✗ {name}에 filters와 patterns가 모두 있어야 합니다.")
         return None
     return data
 
@@ -252,10 +253,20 @@ def grade(result, expected):
     return False, f"판정 {result} ≠ expected {expected}"
 
 
+def get_data_path():
+    """실행할 때 파일 이름을 붙였으면 그 파일, 아니면 기본 data.json을 쓴다.
+    예) python main.py tests/data_error.json  → 시험용 파일
+    돌려주는 값: (읽을 경로, 화면에 보일 이름)"""
+    if len(sys.argv) > 1:
+        return sys.argv[1], sys.argv[1]
+    return DATA_FILE, "data.json"
+
+
 def run_mode2():
     """모드 2: 필터 로드 → 패턴 검증·판정·PASS/FAIL → 성능 분석 → 결과 요약."""
-    print_header("[1] 필터 로드")
-    data = load_data(DATA_FILE)
+    path, name = get_data_path()
+    print_header(f"[1] 필터 로드 ({name})")
+    data = load_data(path, name)
     if data is None:
         return
     filters = load_filters(data["filters"])

@@ -77,6 +77,11 @@
 - 결정: `PERF_SIZES = [3, 5, 13, 25]`마다 `make_matrix(n, 1.0)` 두 개로 잰다.
 - 결과: 얻은 것: 네 크기를 공정하게 비교한다. / 포기한 것: 실제 data.json 패턴으로 잰 시간은 아니다.
 
+### 14. 오류 시험은 별도 파일 + 실행 인자
+- 맥락: 원본 data.json에는 오류 케이스가 없다. 오류 처리를 보여 주려고 원본을 고치면 안 된다.
+- 결정: `tests/`에 오류 데이터 파일을 두고 `python main.py tests/data_error.json`처럼 실행할 때 파일을 고른다. 인자가 없으면 기본 data.json을 읽는다.
+- 결과: 얻은 것: 원본은 그대로 두고, 누구나 명령 한 줄로 같은 시험을 재현한다. / 포기한 것: main.py에 `sys.argv` 몇 줄이 늘었다.
+
 ## 핵심 코드 해설
 <details><summary>main.py · U2 데이터 구조·MAC·판정</summary>
 
@@ -292,6 +297,42 @@ for key, entry in data["patterns"].items():        # 케이스마다
 
 </details>
 
+<details><summary>main.py · U7 실행 인자로 파일 고르기</summary>
+
+```python
+import sys                                     # 실행할 때 붙인 글자(인자)를 읽는 표준 도구
+
+def get_data_path():
+    if len(sys.argv) > 1:                      # sys.argv = ["main.py", "tests/data_error.json"] 처럼 들어온다
+        return sys.argv[1], sys.argv[1]        #   파일 이름을 붙였으면 그 파일 (경로, 화면 이름)
+    return DATA_FILE, "data.json"              # 안 붙였으면 기본 data.json
+
+def run_mode2():
+    path, name = get_data_path()               # 읽을 파일 정하기
+    print_header(f"[1] 필터 로드 ({name})")    # 어느 파일인지 제목에 표시
+    data = load_data(path, name)               # 오류 문구에 실제 파일 이름(name)을 넣는다
+```
+- `sys`는 시험 차단 목록에 없다. 사용하는 도구는 `json`·`os`·`sys`·`time` 4개로, 모두 파이썬 표준 라이브러리다.
+
+**시험 파일 구성 (`tests/data_error.json`, 원본의 size_5 필터 사용)**
+| 케이스 | 넣은 오류 | 결과 |
+|---|---|---|
+| size_5_ok | 없음 (정상 십자가) | PASS |
+| size_5_label | expected `' CROSS '` (대문자·공백) | 정규화돼 PASS |
+| size_5_row | 행 4개 | FAIL: 행이 5개가 아님 |
+| size_5_col | 마지막 줄 4칸 | FAIL: 열이 5개가 아닌 줄이 있음 |
+| size_5_text | 숫자 자리에 `"a"` | FAIL: 숫자가 아닌 값 |
+| size_5_big | 5×5 키에 13×13 패턴 (크기 불일치) | FAIL: 행이 5개가 아님 |
+| size_5_badlabel | expected `"o"` | FAIL: 라벨 오류 |
+| size_5_noexp | expected 없음 | FAIL: 스키마 오류 |
+| size_7_1 | 7×7 필터 없음 | FAIL: size_7 필터가 없음 |
+| pattern_5_1 | 키가 size_로 시작하지 않음 | FAIL: 키 형식 오류 |
+| (필터) size_9 | cross만 있고 x 없음 | 필터 로드에서 건너뜀 |
+
+`tests/data_broken.json`은 JSON 문법이 중간에 끊긴 파일이다.
+
+</details>
+
 ## 수행 로그
 
 ### U1 · 저장소 초기 설정
@@ -473,6 +514,41 @@ X 점수: 0.1
 - VS Code 터미널을 스크롤하면 같은 블록이 겹쳐 보일 수 있다(화면 표시 문제). 실제 출력은 위와 같이 케이스마다 한 번씩이다.
 - 칸 수는 9 → 625로 약 69배, 시간은 0.0014 → 0.0253 ms로 약 18배 늘었다.
 
+### U7 · 재현성 검증
+| # | 명령 (입력) | 결과 | 확인 |
+|---|---|---|---|
+| ① | `python main.py` (`1` + 명세 예시 9줄) | A 1.0 / B 5.0 / 연산 시간 0.0007 ms / 판정 B / 3×3 표 0.0008 ms·9 | 모드 1 정상 |
+| ② | `python main.py` (`2`) | 케이스 6개 중 PASS 3·FAIL 3, 요약 총 6 / 통과 3 / 실패 3 | 합계 일치 |
+| ③ | `python main.py tests/data_error.json` (`2`) | 아래 출력 | 오류 케이스만 FAIL, 끝까지 진행 |
+| ④ | `python main.py tests/data_broken.json` (`2`) | `✗ tests/data_broken.json 형식 오류: Expecting value: line 4 column 1 (char 39)` | 안내 후 종료 |
+| ⑤ | `python main.py tests/none.json` (`2`) | `✗ tests/none.json을(를) 찾을 수 없습니다. 파일 위치를 확인하세요.` | 안내 후 종료 |
+| ⑥ | `Select-String -Path main.py -Pattern "^import"` | `import json` / `import os` / `import sys` / `import time` | 표준 라이브러리만 |
+
+③ 출력 (주요 부분)
+```
+# [1] 필터 로드 (tests/data_error.json)
+✓ size_5 필터 로드 완료 (Cross, X)
+✗ size_9: Cross·X 필터가 모두 있어야 해서 이 크기는 쓰지 않음
+# [2] 패턴 분석 (라벨 정규화 적용)
+--- size_5_ok ---        … 판정: Cross | expected: Cross | PASS
+--- size_5_label ---     … 판정: Cross | expected: Cross | PASS
+--- size_5_row ---       FAIL (패턴 형식 오류: 행이 5개가 아님 (필터는 5×5))
+--- size_5_col ---       FAIL (패턴 형식 오류: 열이 5개가 아닌 줄이 있음 (필터는 5×5))
+--- size_5_text ---      FAIL (패턴 형식 오류: 숫자가 아닌 값이 있음 ('a') (필터는 5×5))
+--- size_5_big ---       FAIL (패턴 형식 오류: 행이 5개가 아님 (필터는 5×5))
+--- size_5_badlabel ---  FAIL (라벨 오류: 표준 라벨로 바꿀 수 없는 expected 값 'o')
+--- size_5_noexp ---     FAIL (스키마 오류 (input 또는 expected 없음))
+--- size_7_1 ---         FAIL (size_7 필터가 없음)
+--- pattern_5_1 ---      FAIL (키 형식 오류 (size_N_번호 형식이 아님))
+# [4] 결과 요약
+총 테스트: 10개
+통과: 2개
+실패: 8개
+```
+- 모드 1 오류 입력(열 수·숫자 오류 → 재입력, Ctrl+C 안전 종료)은 U3 수행 로그에 있다.
+- Python 3.8 문법 검사: 코드를 3.8 문법 기준으로 해석해 통과 (AI 확인). 실행 환경은 Python 3.14.7.
+- ②의 성능 표에서 3×3(0.0026 ms)이 5×5(0.0021 ms)보다 느리게 나왔다. 아주 짧은 계산은 측정 오차가 크다는 예다.
+
 ## 시행착오
 ### 1. push 실패 `remote: Repository not found`
 - 문제: 첫 push가 "저장소를 찾을 수 없음"으로 실패했다.
@@ -501,6 +577,7 @@ X 점수: 0.1
 - U4: 시간은 잴 때마다 달라서 여러 번 재서 평균을 낸다. 사람 입력처럼 계산과 상관없는 구간은 빼고 잰다.
 - U5: 데이터는 약속(스키마)대로 왔는지 먼저 검사한다. 같은 뜻의 다른 표기는 한 표로 모아 통일하면 관리가 쉽다.
 - U6: 실패 이유를 종류별로 나눠 적으면 원인 진단이 쉬워진다. 칸 수가 69배 늘 때 시간은 약 18배 늘었다. 작은 표에서는 고정 비용이 섞이기 때문이다.
+- U7: 재현성은 다른 사람이 같은 명령으로 같은 결과를 얻는 것이다. 시험용 데이터를 따로 두면 원본을 건드리지 않고 오류 처리를 보여 줄 수 있다. 아주 짧은 계산은 측정 오차가 커서 작은 크기가 더 느리게 나오기도 한다.
 
 ## 용어 사전
 | 용어 | 쉬운 풀이 |
@@ -548,3 +625,6 @@ X 점수: 0.1
 | PASS / FAIL | 프로그램의 판정이 정답(expected)과 같으면 통과, 다르면 실패 |
 | 집계 | 여러 결과를 세어 합계를 내는 일 (총·통과·실패 수) |
 | 튜플 | 값 여러 개를 괄호로 묶은 한 묶음. 실패 목록에 `(이름, 이유)`를 함께 넣을 때 쓴다 |
+| 실행 인자 (sys.argv) | 프로그램 이름 뒤에 붙여 주는 추가 정보. `python main.py tests/data_error.json`에서 `tests/data_error.json` |
+| 재현성 | 다른 사람이 같은 명령을 실행해도 같은 결과가 나오는 성질 |
+| Select-String | PowerShell에서 파일 안의 특정 글자가 있는 줄을 찾아 주는 명령 |
